@@ -9,7 +9,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 
 import { runScan } from '../src/scan.js';
 import { parseNpmSpec, parsePySpec, parseImage, resolveLaunch } from '../src/package.js';
-import { checkTool, decodeTagChars } from '../src/tool-rules.js';
+import { checkTool, checkInspection, decodeTagChars } from '../src/tool-rules.js';
+import { isMissingPackageError } from '../src/advisories.js';
 import { buildLock, diffLock, writeLock, readLock } from '../src/lock.js';
 import { inspectServer } from '../src/mcp-client.js';
 import { toSarif, toJson } from '../src/report.js';
@@ -187,6 +188,57 @@ test('discovers user-level configs from the home directory', async () => {
   const r = await runScan({ dir: tmp(), includeGlobal: true, home });
   assert.deepEqual(r.servers.map((s) => s.name).sort(), ['g', 'p']);
   assert.ok(ids(r.findings).has('MCPG004'));
+});
+
+test('flags packages that are not published on the registry', async () => {
+  const srv = http.createServer((req, res) => {
+    res.writeHead(req.url.includes('ghost-mcp') ? 404 : 200, { 'content-type': 'application/json' });
+    res.end('{}');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, '.mcp.json'), JSON.stringify({ mcpServers: {
+      ghost: { command: 'npx', args: ['-y', '@someone/ghost-mcp@latest'], env: { API_TOKEN: 'x' } },
+      real: { command: 'npx', args: ['-y', 'real-mcp@1.0.0'] },
+    } }));
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const r = await runScan({ dir, includeGlobal: false, online: true, registries: { npm: base, pypi: base } });
+    const hits = r.findings.filter((f) => f.ruleId === 'MCPG009');
+    assert.deepEqual(hits.map((f) => f.server), ['ghost']);
+    assert.equal(hits[0].severity, 'high');
+  } finally { srv.close(); }
+
+  // Without --online, the package manager's own error output after a failed launch is enough.
+  const npm = { kind: 'npm', source: 'registry', name: 'x' };
+  assert.ok(isMissingPackageError(npm, 'Server exited (code 1) — npm error code E404 | npm error 404 Not Found'));
+  assert.ok(!isMissingPackageError(npm, 'npm error code ETARGET | No matching version found'));
+  assert.ok(isMissingPackageError({ kind: 'pypi', source: 'registry', name: 'x' }, 'Because x was not found in the package registry'));
+  assert.ok(!isMissingPackageError({ ...npm, source: 'git' }, 'npm error code E404'));
+});
+
+test('servers that mark every tool destructive get one notice, not one per tool', () => {
+  const ann = { readOnlyHint: false, destructiveHint: true };
+  const tools = ['get_quotes', 'get_holdings', 'place_order', 'cancel_order', 'search_instruments'].map((name) => ({ name, description: 'Trading API.', annotations: ann }));
+  const f = checkInspection({ name: 'broker', file: 'x.json', line: 1 }, { tools });
+  assert.deepEqual(f.filter((x) => x.ruleId === 'MCPT011').length, 1);
+  assert.deepEqual(f.filter((x) => x.ruleId === 'MCPT008').map((x) => x.tool).sort(), ['cancel_order', 'place_order']);
+
+  // A server that sets the hint selectively is still trusted.
+  const mixed = [{ name: 'get_a', annotations: { readOnlyHint: true } }, { name: 'nuke', annotations: { destructiveHint: true } }, { name: 'get_b' }];
+  const g = checkInspection({ name: 's' }, { tools: mixed });
+  assert.ok(!ids(g).has('MCPT011'));
+  assert.deepEqual(g.filter((x) => x.ruleId === 'MCPT008').map((x) => x.tool), ['nuke']);
+});
+
+test('empty config files are treated as having no servers', async () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, '.mcp.json'), '');
+  fs.mkdirSync(path.join(dir, '.vscode'));
+  fs.writeFileSync(path.join(dir, '.vscode', 'mcp.json'), '﻿ \n');
+  const r = await runScan({ dir, includeGlobal: false });
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.servers, []);
 });
 
 test('SARIF output points at the config file and line', async () => {

@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { VERSION, expandEnv } from './util.js';
 
 /** Keep the useful tail of a server's stderr, without package-manager chatter. */
@@ -6,6 +8,52 @@ function tidy(stderr) {
   const lines = stderr.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !/^npm (notice|warn)/i.test(l));
   const text = lines.slice(-3).join(' | ');
   return text ? ` — ${text.slice(-240)}` : '';
+}
+
+// cmd.exe metacharacters, escaped with ^ (same approach as cross-spawn).
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/** Find the file Windows would run for `command` (PATH + PATHEXT), or null. */
+function resolveWindowsCommand(command, env, cwd) {
+  const get = (name) => env[Object.keys(env).find((k) => k.toUpperCase() === name) ?? name];
+  const exts = (get('PATHEXT') || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  const dirs = /[\\/]/.test(command) ? [''] : ['', ...(get('PATH') || '').split(';').filter(Boolean)];
+  const names = path.extname(command) ? [command, ...exts.map((e) => command + e)] : exts.map((e) => command + e);
+  for (const dir of dirs) {
+    for (const name of names) {
+      const file = path.resolve(cwd || process.cwd(), dir, name);
+      try { if (fs.statSync(file).isFile()) return file; } catch { /* keep looking */ }
+    }
+  }
+  return null;
+}
+
+/** Quote an argument for the target's argv parser, then escape it for cmd.exe. */
+function escapeCmdArg(arg, doubleEscape) {
+  let out = String(arg)
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\*)$/, '$1$1');
+  out = `"${out}"`.replace(CMD_META, '^$1');
+  return doubleEscape ? out.replace(CMD_META, '^$1') : out;
+}
+
+/**
+ * Work out how to spawn a stdio server. On Windows, .exe files are run directly (Node quotes
+ * the arguments); .cmd/.bat shims such as npx need cmd.exe, so the command line is escaped by hand
+ * instead of relying on `shell: true`, which splits paths containing spaces.
+ */
+function spawnSpec(command, args, env, cwd) {
+  if (process.platform !== 'win32') return { file: command, args, options: {} };
+  const resolved = resolveWindowsCommand(command, env, cwd);
+  if (resolved && /\.(exe|com)$/i.test(resolved)) return { file: resolved, args, options: {} };
+  // Batch shims inside node_modules/.bin re-parse their arguments, so they need a second escape.
+  const doubleEscape = !!resolved && /node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i.test(resolved);
+  const line = [path.normalize(resolved || command).replace(CMD_META, '^$1'), ...args.map((a) => escapeCmdArg(a, doubleEscape))].join(' ');
+  return {
+    file: env.ComSpec || env.COMSPEC || 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${line}"`],
+    options: { windowsVerbatimArguments: true },
+  };
 }
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -60,8 +108,9 @@ function inspectStdio(server, timeoutMs) {
     for (const [k, v] of Object.entries(server.env || {})) env[k] = expandEnv(String(v));
     let child;
     try {
-      child = spawn(expandEnv(server.command), server.args.map((a) => expandEnv(a)), {
-        env, cwd: server.cwd, stdio: ['pipe', 'pipe', 'pipe'], shell: process.platform === 'win32', windowsHide: true,
+      const spec = spawnSpec(expandEnv(server.command), server.args.map((a) => expandEnv(a)), env, server.cwd);
+      child = spawn(spec.file, spec.args, {
+        env, cwd: server.cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...spec.options,
       });
     } catch (e) {
       resolve({ ok: false, error: `Failed to start: ${e.message}` });

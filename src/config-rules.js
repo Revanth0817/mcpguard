@@ -12,6 +12,7 @@ export const CONFIG_RULES = {
   MCPG006: { name: 'known-vulnerable-package', title: 'Known vulnerable MCP package version' },
   MCPG007: { name: 'unsafe-container', title: 'Container runs with dangerous privileges' },
   MCPG008: { name: 'unreviewed-source', title: 'Server installed directly from a git URL' },
+  MCPG009: { name: 'unpublished-package', title: 'Server package does not exist in the registry' },
 };
 
 const SECRET_PATTERNS = [
@@ -147,6 +148,15 @@ function checkDocker(server, launch) {
   if (a.some((x, i) => (x === '-v' || x === '--volume') && /^(\/|~|\$HOME|\$\{HOME\}):/.test(a[i + 1] || ''))) reasons.push('mounts the host root or home directory');
   if (reasons.length) out.push(finding('MCPG007', 'high', server, `Container ${reasons.join(', ')}.`, 'Drop the flag / mount only what the server needs.'));
   return out;
+}
+
+/** MCPG009: the configured package name is not published, so anyone can claim it. */
+export function unpublishedPackageFinding(server, launch, how) {
+  const registry = launch.kind === 'pypi' ? 'PyPI' : 'npm';
+  return finding('MCPG009', 'high', server,
+    `"${launch.name}" was not found on ${registry} (${how}). Anyone can register that name, and this config would then download and run their code${server.env && Object.keys(server.env).length ? ' with the env vars (including any tokens) set here' : ''}.`,
+    'Remove the server, or fix the package name and pin an exact version. If it is a private package, make sure the registry and credentials are configured.',
+    { package: launch.name });
 }
 
 export function checkServerConfig(server) {

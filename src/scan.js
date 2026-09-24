@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { discover } from './discover.js';
-import { checkServerConfig } from './config-rules.js';
+import { checkServerConfig, unpublishedPackageFinding } from './config-rules.js';
 import { checkInspection } from './tool-rules.js';
 import { inspectServer } from './mcp-client.js';
-import { queryOsv } from './advisories.js';
+import { queryOsv, packageExists, isMissingPackageError } from './advisories.js';
 import { readLock, diffLock, serverKey } from './lock.js';
 import { sevRank, VERSION } from './util.js';
 
@@ -23,7 +23,8 @@ async function mapLimit(items, limit, fn) {
  * @param {string} [opts.dir]
  * @param {boolean} [opts.includeGlobal]
  * @param {boolean} [opts.connect]   launch/contact servers to inspect their tools
- * @param {boolean} [opts.online]    query OSV.dev for vulnerabilities
+ * @param {boolean} [opts.online]    query OSV.dev for vulnerabilities and the registries for unpublished packages
+ * @param {{npm?: string, pypi?: string}} [opts.registries]  registry base URLs (defaults: public npm / PyPI)
  * @param {boolean} [opts.useLock]   compare against mcp.lock.json when present
  * @param {number}  [opts.timeoutMs]
  * @param {(msg:string)=>void} [opts.log]
@@ -45,7 +46,23 @@ export async function runScan(opts = {}) {
     findings.push(...f);
   }
 
+  // MCPG009 can be found both online and from a failed launch; report it once per server.
+  const unpublished = new Set();
+  const reportUnpublished = (s, how) => {
+    const key = s.name + '\0' + s.file;
+    if (unpublished.has(key)) return;
+    unpublished.add(key);
+    findings.push(unpublishedPackageFinding(s, s.launch, how));
+  };
+
   if (opts.online) {
+    const published = servers.filter((s) => (s.launch?.kind === 'npm' || s.launch?.kind === 'pypi') && s.launch.source === 'registry' && s.launch.name);
+    await mapLimit(published, 6, async (s) => {
+      const { exists, error } = await packageExists(s.launch.kind, s.launch.name, { registry: opts.registries?.[s.launch.kind] });
+      if (error) log(`Registry lookup failed for ${s.launch.name}: ${error}`);
+      else if (exists === false) reportUnpublished(s, 'registry returned 404');
+    });
+
     const pinned = servers.filter((s) => (s.launch?.kind === 'npm' || s.launch?.kind === 'pypi') && s.launch.pinned && s.launch.source === 'registry');
     await mapLimit(pinned, 6, async (s) => {
       const { vulns, error } = await queryOsv(s.launch.kind, s.launch.name, s.launch.version);
@@ -77,7 +94,10 @@ export async function runScan(opts = {}) {
         ? { ok: true, serverInfo: res.serverInfo, tools: res.tools.map((t) => t.name), prompts: res.prompts.map((p) => p.name) }
         : { ok: false, error: res.error };
       if (res.ok) findings.push(...checkInspection(s, res));
-      else log(`  ${s.name}: ${res.error}`);
+      else {
+        log(`  ${s.name}: ${res.error}`);
+        if (isMissingPackageError(s.launch, res.error)) reportUnpublished(s, 'the package manager reported it missing when launching the server');
+      }
     });
 
     // Cross-server tool name collisions let one server hijack calls meant for another.

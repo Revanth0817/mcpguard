@@ -18,8 +18,10 @@ const PROJECT_FILES = [
 ];
 
 /** Well-known user-level config locations per client. */
-export function globalConfigPaths(home = os.homedir(), platform = process.platform, env = process.env) {
-  const appData = env.APPDATA || path.join(home, 'AppData', 'Roaming');
+export function globalConfigPaths(home, platform = process.platform, env = process.env) {
+  // %APPDATA% belongs to the real user; when a home directory is passed in, stay inside it.
+  const appData = (!home && env.APPDATA) || path.join(home || os.homedir(), 'AppData', 'Roaming');
+  home = home || os.homedir();
   const claudeDesktop = platform === 'darwin'
     ? path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
     : platform === 'win32'
@@ -96,6 +98,8 @@ function normalizeServer(name, def, source, text, scope) {
 export function parseConfigFile(source) {
   let text;
   try { text = fs.readFileSync(source.file, 'utf8'); } catch { return { servers: [], error: null, exists: false }; }
+  // Editors create blank config files (e.g. VS Code's user mcp.json); that just means no servers.
+  if (!text.replace(/^﻿/, '').trim()) return { servers: [], error: null, exists: true };
   let json;
   try { json = parseJsonc(text); } catch (e) {
     return { servers: [], error: `Could not parse JSON: ${e.message}`, exists: true };

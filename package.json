@@ -3,14 +3,42 @@
   "version": "0.1.0",
   "description": "Find risky MCP servers before your AI agents use them: tool poisoning, rug pulls, leaked secrets, vulnerable packages.",
   "type": "module",
-  "bin": { "mcpguard": "bin/mcpguard.js" },
+  "bin": {
+    "mcpguard": "bin/mcpguard.js"
+  },
   "main": "src/scan.js",
-  "files": ["bin", "src", "action.yml", "README.md", "LICENSE"],
-  "engines": { "node": ">=18.17" },
+  "files": [
+    "bin",
+    "src",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
     "demo": "node bin/mcpguard.js test/fixtures/risky-project --connect --server calculator,time,github,files,installer,analytics,db,browser,remote-bridge,sandbox"
   },
-  "keywords": ["mcp", "model-context-protocol", "security", "ai-agents", "prompt-injection", "tool-poisoning", "supply-chain", "claude", "cursor"],
-  "license": "Apache-2.0"
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "security",
+    "ai-agents",
+    "prompt-injection",
+    "tool-poisoning",
+    "supply-chain",
+    "claude",
+    "cursor"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Revanth0817/mcpguard.git"
+  },
+  "homepage": "https://github.com/Revanth0817/mcpguard#readme",
+  "bugs": {
+    "url": "https://github.com/Revanth0817/mcpguard/issues"
+  }
 }

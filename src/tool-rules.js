@@ -8,6 +8,7 @@ export const TOOL_RULES = {
   MCPT007: { name: 'oversized-description', title: 'Unusually long tool description' },
   MCPT008: { name: 'high-impact-capability', title: 'Tool can take high-impact actions' },
   MCPT009: { name: 'context-harvesting-parameter', title: 'Parameter designed to collect conversation or secrets' },
+  MCPT011: { name: 'uninformative-annotations', title: 'Server marks every tool as destructive' },
 };
 
 const INSTRUCTION_PATTERNS = [
@@ -50,7 +51,7 @@ const BASE64_BLOB = /[A-Za-z0-9+/]{80,}={0,2}/;
 const HEX_BLOB = /\b(?:[0-9a-f]{2}){48,}\b/i;
 
 const EXEC_NAME = /(^|[_\-.])(exec|execute|shell|bash|sh|cmd|powershell|run[_-]?(command|cmd|script|code)|eval|terminal|spawn|system)($|[_\-.])/i;
-const DESTRUCTIVE_NAME = /(^|[_\-.])(delete|remove|rm|drop|truncate|destroy|wipe|purge|write[_-]?file|overwrite|transfer|pay|payment|send[_-]?(email|mail|message|money|payment)|post[_-]?message|merge|deploy|push)($|[_\-.])/i;
+const DESTRUCTIVE_NAME = /(^|[_\-.])(delete|remove|rm|drop|truncate|destroy|wipe|purge|write[_-]?file|overwrite|transfer|pay|payment|send[_-]?(email|mail|message|money|payment)|post[_-]?message|merge|deploy|push|cancel|place|modify|buy|sell|withdraw)($|[_\-.])/i;
 const HARVEST_PARAM = /^(side[_-]?note|sidenote|notes?_for_(ai|model)|context|conversation|conversation[_-]?history|chat[_-]?history|history|previous[_-]?messages|system[_-]?prompt|instructions|feedback|debug[_-]?info|metadata|summary[_-]?of[_-]?conversation)$/i;
 const SECRET_PARAM = /^(password|passwd|api[_-]?key|secret|private[_-]?key|ssh[_-]?key|credentials?|access[_-]?token|seed[_-]?phrase|mnemonic)$/i;
 
@@ -165,8 +166,8 @@ export function checkTool(tool, ctx) {
     if (EXEC_NAME.test(tool.name)) {
       once('MCPT008', 'medium', 'can execute arbitrary commands/code. A single prompt injection in any content the agent reads could run code on this machine.',
         'Require human approval for every call, or run the server in a sandbox/container.');
-    } else if (DESTRUCTIVE_NAME.test(tool.name) || ann.destructiveHint === true) {
-      once('MCPT008', 'low', `performs a high-impact action${ann.destructiveHint ? ' (server marks it destructive)' : ''}.`,
+    } else if (DESTRUCTIVE_NAME.test(tool.name) || (ann.destructiveHint === true && !ctx.ignoreDestructiveHint)) {
+      once('MCPT008', 'low', `performs a high-impact action${ann.destructiveHint && !ctx.ignoreDestructiveHint ? ' (server marks it destructive)' : ''}.`,
         'Keep human-in-the-loop approval enabled for this tool.');
     }
     for (const p of params) {
@@ -187,7 +188,17 @@ export function checkTool(tool, ctx) {
 export function checkInspection(server, inspection) {
   const ctx = { server: server.name, file: server.file, line: server.line };
   const findings = [];
-  for (const t of inspection.tools || []) findings.push(...checkTool(t, { ...ctx, kind: 'tool' }));
+  // A hint set on every tool (including obvious reads) carries no information; judge by tool name instead.
+  const tools = inspection.tools || [];
+  const blanket = tools.length >= 3 && tools.every((t) => t.annotations?.destructiveHint === true);
+  if (blanket) {
+    findings.push({
+      ruleId: 'MCPT011', rule: TOOL_RULES.MCPT011.name, title: TOOL_RULES.MCPT011.title, severity: 'info', ...ctx,
+      detail: `All ${tools.length} tools are marked destructive, including ones that look read-only (e.g. "${(tools.find((t) => /^(get|list|read|search|fetch|query)[_-]/i.test(t.name)) || tools[0]).name}"). The hints cannot tell safe tools from dangerous ones, so mcpguard judged each tool by its name instead.`,
+      fix: 'Keep approval on for tools that change things. Ask the maintainer to set readOnlyHint / destructiveHint per tool.',
+    });
+  }
+  for (const t of tools) findings.push(...checkTool(t, { ...ctx, kind: 'tool', ignoreDestructiveHint: blanket }));
   for (const p of inspection.prompts || []) findings.push(...checkTool(p, { ...ctx, kind: 'prompt' }));
   if (inspection.instructions) findings.push(...checkTool({ name: '(instructions)', description: inspection.instructions }, { ...ctx, kind: 'instructions' }));
   // Duplicate tool names across servers are resolved later (cross-server check in scan.js).

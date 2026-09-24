@@ -122,7 +122,7 @@ export function toSarif(result) {
     return {
       id, name: allRules[id]?.name || id,
       shortDescription: { text: allRules[id]?.title || id },
-      helpUri: `https://github.com/mcpguard/mcpguard#${id.toLowerCase()}`,
+      helpUri: `https://github.com/Revanth0817/mcpguard#${id.toLowerCase()}`,
       properties: { tags: ['security', 'mcp', 'ai-agents'], 'security-severity': score[worst] },
     };
   });
@@ -141,6 +141,6 @@ export function toSarif(result) {
   return JSON.stringify({
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     version: '2.1.0',
-    runs: [{ tool: { driver: { name: 'mcpguard', version: VERSION, informationUri: 'https://github.com/mcpguard/mcpguard', rules } }, results }],
+    runs: [{ tool: { driver: { name: 'mcpguard', version: VERSION, informationUri: 'https://github.com/Revanth0817/mcpguard', rules } }, results }],
   }, null, 2);
 }

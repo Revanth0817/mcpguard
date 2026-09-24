@@ -47,3 +47,33 @@ export async function queryOsv(ecosystem, name, version, timeoutMs = 6000) {
     return { vulns: [], error: e.message };
   }
 }
+
+/**
+ * Check whether a package name is published at all. `exists` is null when the answer is unknown
+ * (unsupported ecosystem or a network error). Only the package name is sent, never the config.
+ */
+export async function packageExists(ecosystem, name, { timeoutMs = 6000, registry } = {}) {
+  const url = !name ? null
+    : ecosystem === 'npm' ? `${registry || 'https://registry.npmjs.org'}/${name.replace('/', '%2f')}`
+      : ecosystem === 'pypi' ? `${registry || 'https://pypi.org/pypi'}/${encodeURIComponent(name)}/json`
+        : null;
+  if (!url) return { exists: null, error: null };
+  try {
+    // The abbreviated npm document is much smaller than the full packument.
+    const res = await fetch(url, { headers: { accept: 'application/vnd.npm.install-v1+json, application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+    try { await res.body?.cancel(); } catch { /* ignore */ }
+    if (res.status === 404) return { exists: false, error: null };
+    if (!res.ok) return { exists: null, error: `HTTP ${res.status}` };
+    return { exists: true, error: null };
+  } catch (e) {
+    return { exists: null, error: e.message };
+  }
+}
+
+/** True when a failed launch's error output shows the package manager could not find the package. */
+export function isMissingPackageError(launch, error) {
+  if (!error || !launch || launch.source !== 'registry') return false;
+  if (launch.kind === 'npm') return /\bE404\b|npm (error|ERR!) 404\b/.test(error);
+  if (launch.kind === 'pypi') return /not found in the package registry|No matching distribution found/i.test(error);
+  return false;
+}

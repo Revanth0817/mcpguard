@@ -8,7 +8,7 @@ AI coding agents (Claude Code, Cursor, VS Code Copilot, Windsurf, Gemini CLI, Cl
 - **Rug pulls:** a server silently changing its tools after you approved it
 - **Invisible-text attacks:** Unicode tag / zero-width characters humans can't see but models can
 - **Tool shadowing:** one server instructing the model how to use *another* server's tools
-- **Supply-chain risk:** unpinned `npx`/`uvx`/`docker` servers, git-sourced servers, `curl | sh` launchers
+- **Supply-chain risk:** unpinned `npx`/`uvx`/`docker` servers, git-sourced servers, `curl | sh` launchers, package names that aren't published (and could be claimed by anyone)
 - **Leaked secrets:** tokens and passwords hard-coded in MCP configs
 - **Known CVEs:** vulnerable MCP packages (e.g. `mcp-remote` CVE-2025-6514), plus live lookups against OSV.dev
 
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mcpguard/mcpguard@v0
+      - uses: Revanth0817/mcpguard@v0
         with: { fail-on: high }
 ```
 
@@ -78,7 +78,7 @@ Other CI systems: `npx mcpguard . --no-global --format sarif --output mcpguard.s
 | Flag | |
 |---|---|
 | `--connect` | Inspect live tool definitions (stdio + streamable HTTP) |
-| `--online` | Query OSV.dev for vulnerabilities in pinned packages |
+| `--online` | Query OSV.dev for vulnerabilities in pinned packages, and npm / PyPI for package names that don't exist (anyone could claim them) |
 | `--global` / `--no-global` | Include / exclude user-level configs (default: included when no dir is given, outside CI) |
 | `--server a,b` | Only scan these servers |
 | `--format` | `text` · `json` · `sarif` · `markdown` |
