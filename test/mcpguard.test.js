@@ -260,3 +260,15 @@ test('CLI exit codes follow --fail-on', () => {
   const json = JSON.parse(execFileSync(process.execPath, [CLI, path.join(FIX, 'risky-project'), '--format', 'json', '--fail-on', 'none'], { encoding: 'utf8' }));
   assert.ok(json.summary.critical >= 1);
 });
+
+test('real-world false positives from the popular-server scan stay quiet', () => {
+  const cases = [
+    { name: 'resolve-library-id', description: "Resolves a package name to a library ID. You MUST call this function before 'Query Documentation' tool to obtain a valid library ID." },
+    { name: 'deploy_site', description: 'Deploys the site. Upload credentials are generated and used internally — do not call a separate upload-url endpoint or upload the archive yourself, this tool does it end-to-end.' },
+    { name: 'send_report', description: 'Send the weekly report to the configured Slack channel.' },
+  ];
+  for (const t of cases) {
+    const bad = checkTool(t, { server: 's' }).filter((f) => ['medium', 'high', 'critical'].includes(f.severity));
+    assert.deepEqual(bad, [], t.name);
+  }
+});

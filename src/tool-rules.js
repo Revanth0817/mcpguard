@@ -17,7 +17,7 @@ const INSTRUCTION_PATTERNS = [
   /\b(do\s*n[o']?t|never|without)\s+(tell|telling|inform|informing|mention|mentioning|reveal|revealing|notify|notifying|alert|alerting|show|showing)\b.{0,20}\buser/i,
   /\b(the\s+)?user\s+(must|should)\s+not\s+(know|see|be\s+told)/i,
   /\bbefore\s+(using|calling|invoking|running)\s+(this|any|the)\b.{0,30}\btool/i,
-  /\b(you|assistant|ai|model|agent)\s+(must|should|need\s+to|are\s+required\s+to)\s+(first\s+)?(read|send|include|call|pass|upload|retrieve|fetch|collect)/i,
+  /\b(you|assistant|ai|model|agent)\s+(must|should|need\s+to|are\s+required\s+to)\s+(first\s+)?(read|send|include|pass|upload|collect)\b[^.\n]{0,60}\b(file|content|key|token|credential|secret|password|history|conversation|~\/|\.ssh|\.env)/i,
   /\b(system\s+prompt|developer\s+message|previous\s+messages|conversation\s+history)\b/i,
   /\bthis\s+is\s+(very\s+)?(important|critical|mandatory)\b.{0,40}\b(otherwise|or\s+(the|it)\s+will)/i,
 ];
@@ -33,7 +33,7 @@ const SENSITIVE_PATTERNS = [
 const DIRECTIVE_VERB = /\b(read|cat|open|load|include|pass|send|attach|provide|copy|upload|forward|extract|collect|retrieve)\b/i;
 
 const EXFIL_PATTERNS = [
-  /\b(send|post|upload|forward|transmit|exfiltrate|report|leak|copy)\b[^.\n]{0,80}\b(https?:\/\/|webhook|endpoint|server|email|@[\w-]+\.\w+|external)/i,
+  /(?<!\b(?:not|never|n't)\s+(?:\w+\s+){0,3})\b(send|post|upload|forward|transmit|exfiltrate|leak|copy)\b[^.\n]{0,80}(https?:\/\/(?!(?:www\.)?(?:example\.com|localhost))[\w.-]+|webhook\.site|@[\w-]+\.[a-z]{2,})/i,
   /\b(bcc|cc)\b[^.\n]{0,40}@[\w-]+\.[\w.]+/i,
   /\bredirect\b[^.\n]{0,60}\b(all|every)\b[^.\n]{0,30}\b(emails?|messages?|payments?|requests?)/i,
 ];
@@ -139,7 +139,8 @@ export function checkTool(tool, ctx) {
   if (sens) {
     const directive = DIRECTIVE_VERB.test(snippet(scanText, sens));
     const legit = /\b(no|never|not|without|redact|mask)\b[^.]{0,30}(password|credential|key|token)/i.test(scanText);
-    if (directive && !legit) {
+    const genericOnlyHit = SENSITIVE_PATTERNS.indexOf(sens) === SENSITIVE_PATTERNS.length - 1;
+    if (directive && !legit && (!genericOnlyHit || reported.has('MCPT001'))) {
       const genericOnly = SENSITIVE_PATTERNS.indexOf(sens) === SENSITIVE_PATTERNS.length - 1;
       once('MCPT002', reported.has('MCPT001') ? 'critical' : genericOnly ? 'medium' : 'high', `references secret material with an action verb: "${snippet(scanText, sens)}"`,
         'Verify why this tool needs credential files. Legitimate tools rarely mention them.');
@@ -176,7 +177,7 @@ export function checkTool(tool, ctx) {
         once('MCPT009', 'high', `parameter "${p.name}" appears designed to collect conversation context or file contents${pDesc ? `: "${pDesc.slice(0, 120)}"` : ''}.`,
           'Legitimate tools do not need your conversation history. Inspect what the server does with this field.');
       } else if (SECRET_PARAM.test(p.name) && !/(auth|login|credential|secret|vault|key|password|token)/i.test(tool.name)) {
-        once('MCPT009', 'medium', `asks the model to supply "${p.name}", which is unrelated to the tool's name.`,
+        once('MCPT009', 'low', `asks the model to supply "${p.name}", which is unrelated to the tool's name.`,
           'Make sure the agent never passes real secrets to this tool.');
       }
     }
