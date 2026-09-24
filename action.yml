@@ -1,0 +1,59 @@
+name: 'mcpguard — MCP security scan'
+description: 'Scan MCP server configs in pull requests for tool poisoning, rug pulls, leaked secrets and vulnerable packages.'
+author: 'mcpguard'
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  path:
+    description: 'Directory to scan'
+    default: '.'
+  fail-on:
+    description: 'Fail the check at this severity or above: critical | high | medium | low | none'
+    default: 'high'
+  online:
+    description: 'Also query OSV.dev for vulnerabilities in pinned packages'
+    default: 'true'
+  upload-sarif:
+    description: 'Upload results to GitHub code scanning (needs security-events: write)'
+    default: 'true'
+
+outputs:
+  sarif-file:
+    description: 'Path of the SARIF report'
+    value: ${{ steps.scan.outputs.sarif }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - id: scan
+      shell: bash
+      env:
+        MCPG_PATH: ${{ inputs.path }}
+        MCPG_FAIL_ON: ${{ inputs.fail-on }}
+        MCPG_ONLINE: ${{ inputs.online }}
+      run: |
+        ONLINE=""
+        if [ "$MCPG_ONLINE" = "true" ]; then ONLINE="--online"; fi
+        SARIF="${RUNNER_TEMP}/mcpguard.sarif"
+        echo "sarif=$SARIF" >> "$GITHUB_OUTPUT"
+        node "${{ github.action_path }}/bin/mcpguard.js" "$MCPG_PATH" --no-global $ONLINE --format sarif --output "$SARIF" --fail-on none
+        node "${{ github.action_path }}/bin/mcpguard.js" "$MCPG_PATH" --no-global $ONLINE --format markdown --fail-on none >> "$GITHUB_STEP_SUMMARY"
+
+    - if: ${{ inputs.upload-sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      continue-on-error: true
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+        category: mcpguard
+
+    - shell: bash
+      env:
+        MCPG_PATH: ${{ inputs.path }}
+        MCPG_FAIL_ON: ${{ inputs.fail-on }}
+      run: node "${{ github.action_path }}/bin/mcpguard.js" "$MCPG_PATH" --no-global --fail-on "$MCPG_FAIL_ON" > /dev/null

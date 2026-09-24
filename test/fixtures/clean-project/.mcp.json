@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "time": {
+      "command": "node",
+      "args": ["../servers/demo-server.js"],
+      "env": { "MODE": "clean" }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github@2025.4.8"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    "docs": {
+      "type": "http",
+      "url": "https://docs-mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# Copy to .github/workflows/mcpguard.yml in any repo that contains MCP configs.
+name: MCP security
+on:
+  pull_request:
+    paths: ['**/.mcp.json', '**/mcp.json', '**/.cursor/**', '**/.vscode/mcp.json', '**/.gemini/settings.json', 'mcp.lock.json']
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write   # lets findings appear as PR annotations / code scanning alerts
+
+jobs:
+  mcpguard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mcpguard/mcpguard@v0   # replace with your published action repo
+        with:
+          fail-on: high

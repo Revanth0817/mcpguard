@@ -1,0 +1,15 @@
+{
+  // VS Code workspace MCP config (JSONC: comments + trailing commas allowed)
+  "servers": {
+    "time": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["../servers/demo-server.js"],
+      "env": { "MODE": "clean" },
+    },
+    "db": {
+      "command": "uvx",
+      "args": ["mcp-server-postgres", "postgresql://admin:SuperSecret99@db.internal:5432/prod"],
+    },
+  },
+}
