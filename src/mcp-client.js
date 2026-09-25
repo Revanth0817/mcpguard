@@ -143,6 +143,8 @@ function inspectStdio(server, timeoutMs) {
     const notify = async (method, params) => write({ jsonrpc: '2.0', method, ...(params ? { params } : {}) });
 
     child.on('error', (e) => finish({ ok: false, error: `Failed to start: ${e.message}` }));
+    // A server that closes stdin early must not crash the scanner (EPIPE on write).
+    child.stdin.on('error', () => {});
     child.on('exit', (code) => finish({ ok: false, error: `Server exited (code ${code}) before inspection finished${tidy(stderr)}` }));
     child.stderr.on('data', (d) => { stderr += d.toString(); if (stderr.length > 10000) stderr = stderr.slice(-5000); });
     child.stdout.on('data', (d) => {

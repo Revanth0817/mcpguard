@@ -16,9 +16,9 @@ const INSTRUCTION_PATTERNS = [
   /\bignore\s+(all\s+|any\s+)?(previous|prior|above|earlier|other)\s+(instructions?|prompts?|rules|directions)/i,
   /\b(do\s*n[o']?t|never|without)\s+(tell|telling|inform|informing|mention|mentioning|reveal|revealing|notify|notifying|alert|alerting|show|showing)\b.{0,20}\buser/i,
   /\b(the\s+)?user\s+(must|should)\s+not\s+(know|see|be\s+told)/i,
-  /\bbefore\s+(using|calling|invoking|running)\s+(this|any|the)\b.{0,30}\btool/i,
-  /\b(you|assistant|ai|model|agent)\s+(must|should|need\s+to|are\s+required\s+to)\s+(first\s+)?(read|send|include|pass|upload|collect)\b[^.\n]{0,60}\b(file|content|key|token|credential|secret|password|history|conversation|~\/|\.ssh|\.env)/i,
-  /\b(system\s+prompt|developer\s+message|previous\s+messages|conversation\s+history)\b/i,
+  /\bbefore\s+(using|calling|invoking|running)\s+(this|any)\b.{0,30}\btool\b[^.\n]{0,20}?,?\s*(you\s+must\s+|please\s+|first\s+)?(read|send|include|pass|fetch|retrieve|collect|upload|provide)\b/i,
+  /\b(you|assistant|ai|model|agent)\s+(must|should|are\s+required\s+to)\s+(first\s+)?(read|send|include|pass|upload|collect)\b[^.\n]{0,60}\b(keys?|tokens?|credentials?|secrets?|passwords?|conversation|chat\s+history|~\/|\.ssh|\.env|mcp\.json)/i,
+  /\b(reveal|include|send|print|repeat|output|pass|leak)\b[^.\n]{0,40}\b(system\s+prompt|developer\s+message|previous\s+messages|conversation\s+history)\b/i,
   /\bthis\s+is\s+(very\s+)?(important|critical|mandatory)\b.{0,40}\b(otherwise|or\s+(the|it)\s+will)/i,
 ];
 
@@ -39,10 +39,9 @@ const EXFIL_PATTERNS = [
 ];
 
 const SHADOW_PATTERNS = [
-  /\b(when|whenever|if|every\s+time)\b[^.\n]{0,60}\b(other|another|any|the)\s+[`'"]?[\w.-]*[`'"]?\s*(tool|server|function)\s+(is\s+)?(used|called|invoked|runs?)/i,
-  /\binstead\s+of\s+(using|calling)\b[^.\n]{0,40}\b(tool|server)/i,
-  /\b(all|any|every)\s+(other\s+)?(tools?|servers?)\s+(must|should)\b/i,
-  /\b(side\s*effect|also\s+(change|modify|override))\b[^.\n]{0,60}\btool/i,
+  /\b(when|whenever|if|every\s+time)\b[^.\n]{0,80}\b(other|another|any\s+other|different|third[-\s]party)\s+(tools?|servers?|mcp\s+servers?)\b[^.\n]{0,40}\b(is\s+|are\s+)?(used|called|invoked|runs?)/i,
+  /\b(all|any|every)\s+other\s+(tools?|servers?)\s+(must|should)\b/i,
+  /\b(override|replace|intercept|hijack)\b[^.\n]{0,40}\b(other|another)\s+(tools?|servers?)/i,
 ];
 
 const INVISIBLE = /[​-‏‪-‮⁠-⁤⁦-⁩﻿­]|[\u{E0000}-\u{E007F}]/u;
@@ -50,7 +49,7 @@ const TAG_CHARS = /[\u{E0020}-\u{E007E}]+/gu;
 const BASE64_BLOB = /[A-Za-z0-9+/]{80,}={0,2}/;
 const HEX_BLOB = /\b(?:[0-9a-f]{2}){48,}\b/i;
 
-const EXEC_NAME = /(^|[_\-.])(exec|execute|shell|bash|sh|cmd|powershell|run[_-]?(command|cmd|script|code)|eval|terminal|spawn|system)($|[_\-.])/i;
+const EXEC_NAME = /(^|[_\-.])(exec|execute|shell|bash|sh|cmd|powershell|run[_-]?(command|cmd|script|code)|eval|terminal|spawn)($|[_\-.])/i;
 const DESTRUCTIVE_NAME = /(^|[_\-.])(delete|remove|rm|drop|truncate|destroy|wipe|purge|write[_-]?file|overwrite|transfer|pay|payment|send[_-]?(email|mail|message|money|payment)|post[_-]?message|merge|deploy|push|cancel|place|modify|buy|sell|withdraw)($|[_\-.])/i;
 const HARVEST_PARAM = /^(side[_-]?note|sidenote|notes?_for_(ai|model)|context|conversation|conversation[_-]?history|chat[_-]?history|history|previous[_-]?messages|system[_-]?prompt|instructions|feedback|debug[_-]?info|metadata|summary[_-]?of[_-]?conversation)$/i;
 const SECRET_PARAM = /^(password|passwd|api[_-]?key|secret|private[_-]?key|ssh[_-]?key|credentials?|access[_-]?token|seed[_-]?phrase|mnemonic)$/i;
@@ -173,7 +172,8 @@ export function checkTool(tool, ctx) {
     }
     for (const p of params) {
       const pDesc = String(p.schema?.description || '');
-      if (HARVEST_PARAM.test(p.name) && /\b(all|entire|full|previous|every|conversation|context|history|file|content)\b/i.test(pDesc + ' ' + p.name)) {
+      const asksForContext = /\b(entire|full|whole|complete|all)\b[^.\n]{0,30}\b(conversation|chat|message\s+history|previous\s+messages|system\s+prompt)|\b(contents?\s+of\s+(the\s+|any\s+|all\s+)?(requested\s+)?files?|file\s+contents?)\b|\b(conversation|chat)\s+(history|so\s+far|context)\b/i.test(pDesc);
+      if ((HARVEST_PARAM.test(p.name) || !pDesc) && asksForContext) {
         once('MCPT009', 'high', `parameter "${p.name}" appears designed to collect conversation context or file contents${pDesc ? `: "${pDesc.slice(0, 120)}"` : ''}.`,
           'Legitimate tools do not need your conversation history. Inspect what the server does with this field.');
       } else if (SECRET_PARAM.test(p.name) && !/(auth|login|credential|secret|vault|key|password|token)/i.test(tool.name)) {

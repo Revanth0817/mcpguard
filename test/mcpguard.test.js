@@ -272,3 +272,29 @@ test('real-world false positives from the popular-server scan stay quiet', () =>
     assert.deepEqual(bad, [], t.name);
   }
 });
+
+test('a server that closes its input early does not crash the scanner', async () => {
+  const script = "process.stdin.once('data',()=>{process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:1,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'x',version:'1'}}})+'\\n');process.stdin.destroy();setTimeout(()=>process.exit(0),50)})";
+  const res = await inspectServer({ name: 'early-exit', transport: 'stdio', command: process.execPath, args: ['-e', script], env: {} }, { timeoutMs: 5000 });
+  assert.equal(res.ok, false);
+});
+
+test('descriptions from popular real servers are not flagged medium+', () => {
+  const cases = [
+    { name: 'kubectl_get', description: 'Get Kubernetes resources.', inputSchema: { type: 'object', properties: { context: { type: 'string', description: 'Kubeconfig Context to use for the command (optional - defaults to null)' } } } },
+    { name: 'kubectl_apply', description: 'Apply a manifest. The filename option reads a local file on the machine running the MCP server, so it is rejected when the server runs over a remote (SSE/Streamable HTTP) transport; use \'manifest\' instead.' },
+    { name: 'screencast_start', description: 'Start recording.', inputSchema: { type: 'object', properties: { context: { type: 'string', description: 'Id of the top-level browsing context to record. Defaults to the currently selected page.' } } } },
+    { name: 'get_design_system_kit', description: 'Returns tokens, components and resolved style values. Use this instead of calling individual tools to avoid context window overflow.' },
+    { name: 'rerank-documents', description: 'Rerank documents. Prefer the "rerank" parameter of search-records instead of calling this tool separately.' },
+    { name: 'opencode_ask', description: 'Ask a question.', inputSchema: { type: 'object', properties: { system: { type: 'string', description: 'Optional system prompt override' } } } },
+    { name: 'opencode_conversation', description: 'Get the full conversation history of a session, formatted for easy reading.' },
+    { name: 'export_csv', description: 'Export data. If the user asks for numbers, ask which intent they want before calling the tool.' },
+    { name: 'sftp-download-file', description: 'Download a file to disk. Use for large files; use sftp-download when you need to read the contents.' },
+    { name: 'figma_get_design_system_summary', description: 'Summarise the design system.' },
+    { name: 'update_viewer_context', description: 'Update context.', inputSchema: { type: 'object', properties: { context: { type: 'string', description: 'Full replacement text (roles, tickets, review queues). Empty clears.' } } } },
+  ];
+  for (const t of cases) {
+    const bad = checkTool(t, { server: 's' }).filter((f) => ['medium', 'high', 'critical'].includes(f.severity));
+    assert.deepEqual(bad.map((f) => f.ruleId), [], t.name);
+  }
+});
