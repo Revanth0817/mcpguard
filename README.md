@@ -23,11 +23,13 @@ Zero dependencies. Nothing is sent anywhere unless you pass `--online`.
 ## Quick start
 
 ```bash
-npx mcpguard                    # audit this machine's MCP configs + the current project
-npx mcpguard --connect          # also read every server's tools and check them for poisoning
-npx mcpguard lock --connect     # approve current servers & tool definitions → mcp.lock.json
-npx mcpguard --connect          # later: alerts if anything changed since approval
+npx github:Revanth0817/mcpguard                # audit this machine's MCP configs + the current project
+npx github:Revanth0817/mcpguard --connect       # also read every server's tools and check them for poisoning
+npx github:Revanth0817/mcpguard lock --connect  # approve current servers & tool definitions → mcp.lock.json
+npx github:Revanth0817/mcpguard --connect       # later: alerts if anything changed since approval
 ```
+
+> Not on npm yet — the commands above run straight from this repo via `npx`. Once published (`npm publish`), the shorter `npx mcpguard` form will also work; both will keep working.
 
 `--connect` starts each configured server (the same way your AI client would) and calls only `initialize`, `tools/list` and `prompts/list`. **It never calls a tool.** Servers that pipe remote code into a shell are never launched.
 
@@ -77,7 +79,7 @@ jobs:
 
 Findings show up as PR annotations (SARIF / code scanning) and in the job summary. See `examples/github-workflow.yml`.
 
-Other CI systems: `npx mcpguard . --no-global --format sarif --output mcpguard.sarif`.
+Other CI systems: `npx github:Revanth0817/mcpguard . --no-global --format sarif --output mcpguard.sarif`.
 
 ## Options
 

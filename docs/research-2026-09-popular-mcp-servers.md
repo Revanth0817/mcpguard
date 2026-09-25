@@ -72,9 +72,9 @@ This research ran mcpguard against real servers for the first time, and it made 
 ## What you can do today
 
 ```bash
-npx mcpguard                    # audit the MCP servers on your machine and in your repo
-npx mcpguard --connect          # also read and check every tool description
-npx mcpguard lock --connect     # approve what you have; get alerted when anything changes
+npx github:Revanth0817/mcpguard                # audit the MCP servers on your machine and in your repo
+npx github:Revanth0817/mcpguard --connect       # also read and check every tool description
+npx github:Revanth0817/mcpguard lock --connect  # approve what you have; get alerted when anything changes
 ```
 
 1. **Pin versions** in your MCP configs (`package@1.2.3`, not bare `npx -y package`).
